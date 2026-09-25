@@ -106,6 +106,22 @@ SEEDED_SURVEYS = [
 ]
 
 
+# Un utilisateur par rôle à périmètre, et ce seul rôle : la connexion de
+# développement (#82) permet ainsi d'essayer chaque écran avec les droits d'un
+# rôle, sans ceux d'admin. Les périmètres (MDAI5, Montpellier) sont ceux du
+# sondage 1, pour que chacun voie des données tout de suite. Les identifiants
+# suivent le dernier utilisateur seedé (22) : soumissions et répondants ne
+# changent pas (#84).
+SINGLE_ROLE_USER_DATA = (
+    (23, "facilitator.mdai5@epf.fr", "facilitator:MDAI5"),
+    (24, "program.manager.mdai5@epf.fr", "program_manager:MDAI5"),
+    (25, "campus.manager.montpellier@epf.fr", "campus_manager:Montpellier"),
+)
+SINGLE_ROLE_USERS = tuple(
+    (user_id, mail) for user_id, mail, _ in SINGLE_ROLE_USER_DATA
+)
+
+
 def seed_users(session: Session):
     """Remplit la table users."""
 
@@ -119,6 +135,7 @@ def seed_users(session: Session):
         (7, "arnaud.jousset@epf.fr"),
         (8, "etienne.gibaud@epf.fr"),
         *ADDITIONAL_STUDENT_USERS,
+        *SINGLE_ROLE_USERS,
     ]
     for u_data in user_data:
         user = User(user_id=u_data[0], mail=u_data[1])
@@ -138,6 +155,7 @@ def seed_roles(session: Session):
         (6, "campus_manager:Montpellier"),
         (7, "admin"),
         (8, "admin"),
+        *((user_id, role) for user_id, _, role in SINGLE_ROLE_USER_DATA),
     ]
     for r_data in role_data:
         role = Role(user_id=r_data[0], role=r_data[1])
