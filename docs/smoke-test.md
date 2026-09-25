@@ -6,8 +6,9 @@ Run it before proposing a change that touches startup, configuration, dependenci
 
 ## Prerequisites
 
-- **Python 3.12.** On Windows, the commands use the `py` launcher (`py -3.12`); check with `py -0` that it lists a 3.12. If it does not, install one, then check again.
-- **On Windows on ARM64, a 64-bit (x64) Python 3.12, not the ARM64 build.** `cryptography`, pulled in by `msal`, publishes no `win_arm64` wheel: pip then tries to compile it, which needs Rust and OpenSSL, and Windows' application control policy may block the Rust toolchain anyway (`WinError 4551`). The x64 build runs under emulation and installs every dependency from wheels. Install it from python.org (the last 3.12 release with a Windows installer is 3.12.10, "Windows installer (64-bit)"), then create the virtual environment with that interpreter by its path, `& "$env:LOCALAPPDATA\Programs\Python\Python312\python.exe" -m venv .venv`, instead of `py -3.12 -m venv .venv`. To check the build, `python -c "import sysconfig; print(sysconfig.get_platform())"` must print `win-amd64` (`platform.machine()` prints `ARM64` either way, as it reports the processor).
+- **[uv](https://docs.astral.sh/uv/getting-started/installation/)**, the project's package manager. It reads the interpreter from `.python-version` (3.12) and installs the dependencies from `uv.lock`.
+- **Python 3.12.** uv finds an installed 3.12, or downloads one if none is installed.
+- **On Windows on ARM64, a 64-bit (x64) Python 3.12, not the ARM64 build.** `cryptography`, pulled in by `msal`, publishes no `win_arm64` wheel: pip then tries to compile it, which needs Rust and OpenSSL, and Windows' application control policy may block the Rust toolchain anyway (`WinError 4551`). The x64 build runs under emulation and installs every dependency from wheels. Install it from python.org (the last 3.12 release with a Windows installer is 3.12.10, "Windows installer (64-bit)"), then point uv at it once, for step 1's `uv sync`: `uv sync --python "$env:LOCALAPPDATA\Programs\Python\Python312\python.exe"`. uv keeps that interpreter in `.venv` afterwards. To check the build, `python -c "import sysconfig; print(sysconfig.get_platform())"` must print `win-amd64` (`platform.machine()` prints `ARM64` either way, as it reports the processor).
 - **For step 2, a running Docker daemon.**
 - **For step 5, your own LLM key** (see step 5).
 
@@ -29,30 +30,28 @@ The commands call the interpreter **by its path** (`.venv\Scripts\python.exe`) r
 The same on both systems (one line, no continuation):
 
 ```
-python -m compileall -q main.py sondage_loader.py survey_loader_from_xlsx.py summaries_generator_daemon.py core models routers services
+python -m compileall -q src
 git diff --check
 ```
 
 ## 1. Local start, without credentials
 
-In a fresh clone of the branch, with an empty virtual environment.
+In a fresh clone of the branch. `uv sync` creates `.venv`, installs the locked dependencies, and installs the `oceens` package into it.
 
 **Windows (PowerShell)**
 
 ```powershell
 Copy-Item .env.example .env
-py -3.12 -m venv .venv
-.venv\Scripts\python.exe -m pip install -r requirements.txt
-.venv\Scripts\uvicorn.exe main:app --port 8000
+uv sync
+.venv\Scripts\uvicorn.exe oceens.main:app --port 8000
 ```
 
 **macOS / Linux (bash)**
 
 ```bash
 cp .env.example .env
-python3 -m venv .venv
-.venv/bin/pip install -r requirements.txt
-.venv/bin/uvicorn main:app --port 8000
+uv sync
+.venv/bin/uvicorn oceens.main:app --port 8000
 ```
 
 Expected, with no Entra credential and no LLM key:
@@ -63,7 +62,7 @@ Expected, with no Entra credential and no LLM key:
 | `GET /dev/login` | 200 |
 | `GET /nope` | 303 to `/` (404 middleware → `/`) |
 
-The startup logs create the tables, insert the demonstration data set, and contain no error and no exception traceback.
+The startup logs create the tables, insert the demonstration data set, and contain no error and no exception traceback. The database is created in `database/` at the repository root, whatever the working directory.
 
 ## 2. Start with Docker
 
@@ -94,19 +93,19 @@ An invalid startup configuration must exit with **code 1**, so that a supervisor
 ```powershell
 # Invalid AUTH_MODE
 $env:AUTH_MODE = "bogus"
-.venv\Scripts\python.exe -c "import main"; $LASTEXITCODE   # 1
+.venv\Scripts\python.exe -c "import oceens.main"; $LASTEXITCODE   # 1
 Remove-Item Env:AUTH_MODE
 
 # Missing ENTRA_*, without .env
 Rename-Item .env .env.bak
 'AUTH_MODE','ENTRA_CLIENT_ID','ENTRA_CLIENT_SECRET','ENTRA_TENANT_ID' |
   ForEach-Object { Remove-Item "Env:$_" -ErrorAction SilentlyContinue }
-.venv\Scripts\python.exe -c "import main"; $LASTEXITCODE   # 1
+.venv\Scripts\python.exe -c "import oceens.main"; $LASTEXITCODE   # 1
 
 # Missing SECRET_KEY in entra, without .env
 $env:ENTRA_CLIENT_ID = "x"; $env:ENTRA_CLIENT_SECRET = "x"; $env:ENTRA_TENANT_ID = "x"
 Remove-Item Env:SECRET_KEY -ErrorAction SilentlyContinue
-.venv\Scripts\python.exe -c "import main"; $LASTEXITCODE   # 1
+.venv\Scripts\python.exe -c "import oceens.main"; $LASTEXITCODE   # 1
 'ENTRA_CLIENT_ID','ENTRA_CLIENT_SECRET','ENTRA_TENANT_ID' |
   ForEach-Object { Remove-Item "Env:$_" }
 Rename-Item .env.bak .env
@@ -116,16 +115,16 @@ Rename-Item .env.bak .env
 
 ```bash
 # Invalid AUTH_MODE
-AUTH_MODE=bogus .venv/bin/python -c "import main"; echo $?   # 1
+AUTH_MODE=bogus .venv/bin/python -c "import oceens.main"; echo $?   # 1
 
 # Missing ENTRA_*, without .env
 mv .env .env.bak
 env -u AUTH_MODE -u ENTRA_CLIENT_ID -u ENTRA_CLIENT_SECRET -u ENTRA_TENANT_ID \
-  .venv/bin/python -c "import main"; echo $?   # 1
+  .venv/bin/python -c "import oceens.main"; echo $?   # 1
 
 # Missing SECRET_KEY in entra, without .env
 env -u AUTH_MODE -u SECRET_KEY ENTRA_CLIENT_ID=x ENTRA_CLIENT_SECRET=x ENTRA_TENANT_ID=x \
-  .venv/bin/python -c "import main"; echo $?   # 1
+  .venv/bin/python -c "import oceens.main"; echo $?   # 1
 mv .env.bak .env
 ```
 
@@ -145,7 +144,7 @@ LLM_API_KEY=<your key>
 
 Replace `<your key>` with the key itself, without the angle brackets. Never paste it anywhere else: not in a commit, not in an issue, not in a chat. A key that has been pasted somewhere is compromised: revoke it and create a new one.
 
-Quick check, without going through the interface. **The key must be in this command's environment, not only in `.env`**: `load_dotenv()` is called by the application, the daemon and the authentication module, but not by `services/llm_client.py`, the only module imported here. Without the prefix below, the command raises `LLMConfigError` whatever `.env` contains.
+Quick check, without going through the interface. **The key must be in this command's environment, not only in `.env`**: `load_dotenv()` is called by the application, the daemon and the authentication module, but not by `oceens/services/llm_client.py`, the only module imported here. Without the prefix below, the command raises `LLMConfigError` whatever `.env` contains.
 
 The `python -c` line fits on one line and is the same on both systems; only the interpreter's path and the way the variable is set change. On Windows, these are three separate commands: run them one at a time.
 
@@ -153,14 +152,14 @@ The `python -c` line fits on one line and is the same on both systems; only the 
 
 ```powershell
 $env:LLM_API_KEY = "<your key>"
-.venv\Scripts\python.exe -c "from types import SimpleNamespace; from services import llm_client as c; p = SimpleNamespace(name='Ollama EPF', api_type='ollama', base_url='https://locallm.mde.epf.fr/ollama', api_key_env='LLM_API_KEY', default_model='gemma4:26b'); print(c.check_model(p, 'gemma4:26b')); print(c.ping_generation(p, 'gemma4:26b'))"
+.venv\Scripts\python.exe -c "from types import SimpleNamespace; from oceens.services import llm_client as c; p = SimpleNamespace(name='Ollama EPF', api_type='ollama', base_url='https://locallm.mde.epf.fr/ollama', api_key_env='LLM_API_KEY', default_model='gemma4:26b'); print(c.check_model(p, 'gemma4:26b')); print(c.ping_generation(p, 'gemma4:26b'))"
 Remove-Item Env:LLM_API_KEY
 ```
 
 **macOS / Linux (bash)**
 
 ```bash
-LLM_API_KEY=<your key> .venv/bin/python -c "from types import SimpleNamespace; from services import llm_client as c; p = SimpleNamespace(name='Ollama EPF', api_type='ollama', base_url='https://locallm.mde.epf.fr/ollama', api_key_env='LLM_API_KEY', default_model='gemma4:26b'); print(c.check_model(p, 'gemma4:26b')); print(c.ping_generation(p, 'gemma4:26b'))"
+LLM_API_KEY=<your key> .venv/bin/python -c "from types import SimpleNamespace; from oceens.services import llm_client as c; p = SimpleNamespace(name='Ollama EPF', api_type='ollama', base_url='https://locallm.mde.epf.fr/ollama', api_key_env='LLM_API_KEY', default_model='gemma4:26b'); print(c.check_model(p, 'gemma4:26b')); print(c.ping_generation(p, 'gemma4:26b'))"
 ```
 
 Expected: `True`, then `(True, None, None)`. `check_model` alone is not enough: the model list still answers normally for an account with no credit, only the generation call reveals it. With an empty value, or without the variable, the same command raises `LLMConfigError`: that is step 4's behaviour. With a wrong key, `check_model` raises an `HTTPError`.
