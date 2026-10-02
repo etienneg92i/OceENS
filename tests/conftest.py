@@ -6,10 +6,18 @@ ne touche jamais la base de développement.
 
 Importer un module de `oceens.core` importe `oceens.core.auth`, qui arrête le
 processus sans credentials Entra : les tests tournent en `AUTH_MODE=dev`.
+
+Plusieurs modules appellent `load_dotenv()` à l'import. La CI n'a pas de
+`.env`, et en local un `.env` de développement écraserait la configuration
+ci-dessus : `load_dotenv` devient un no-op avant le premier import du projet.
 """
 
 import os
 import tempfile
+
+import dotenv
+
+dotenv.load_dotenv = lambda *args, **kwargs: False
 
 os.environ["LOCAL_DATABASE_DIR"] = tempfile.mkdtemp(prefix="oceens-tests-")
 os.environ["AUTH_MODE"] = "dev"
