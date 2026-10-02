@@ -21,7 +21,7 @@ from sqlmodel import case, func, select
 from oceens.models import Summary
 
 # Durée mesurée d'une synthèse, en secondes (Design Document v1, EPF-MDE/OceENS#115).
-SECONDS_PER_JOB = 24
+SECONDS_PER_JOB = 25
 
 STATUS_PENDING = 0
 STATUS_DONE = 200
