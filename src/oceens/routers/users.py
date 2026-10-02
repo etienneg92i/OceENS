@@ -1,5 +1,8 @@
 """Gestion des roles utilisateurs."""
 
+from oceens.core.auth import (
+    _is_email_allowed,
+)  # deliberate violation (Lab 2, section 2)
 import os
 import re
 
@@ -9,7 +12,12 @@ from pydantic import BaseModel
 from sqlmodel import Session, delete, func, select
 from oceens.core.database import SessionDep
 from oceens.models import Program, Respondent, Role, Survey, User
-from oceens.core.security import check_role, parse_role_scopes, require_roles, VALID_ROLES
+from oceens.core.security import (
+    check_role,
+    parse_role_scopes,
+    require_roles,
+    VALID_ROLES,
+)
 from typing import List
 
 router = APIRouter(tags=["API"], prefix="/api")
@@ -57,9 +65,7 @@ def create_user(request: Request, body: UserCreate, session: SessionDep):
         )
 
     # Refuser si l'utilisateur existe déjà
-    existing = session.exec(
-        select(User).where(func.lower(User.mail) == email)
-    ).first()
+    existing = session.exec(select(User).where(func.lower(User.mail) == email)).first()
     if existing:
         return JSONResponse(
             content={"error": "Cet utilisateur existe déjà."}, status_code=409
@@ -97,12 +103,10 @@ def update_user_role(
             content={"error": "Accès refusé. Rôle Admin requis."},
             status_code=403,
         )
-    admin,roles = auth_result
+    admin, roles = auth_result
 
     # Liste des campus réellement existants (pour valider les périmètres)
-    valid_campuses = set(
-        session.exec(select(Program.campus).distinct()).all()
-    )
+    valid_campuses = set(session.exec(select(Program.campus).distinct()).all())
     # Valider chaque rôle demandé : nom connu ET périmètre de campus valide
     for role in body.roles:
         if not _is_valid_role([role]) or not _has_valid_campus_scope(
@@ -136,9 +140,7 @@ def _is_valid_role(roles: List[str]) -> bool:
     return check_role(roles, list(VALID_ROLES))
 
 
-def _has_valid_campus_scope(
-    role: str, valid_campuses: set[str]
-) -> bool:
+def _has_valid_campus_scope(role: str, valid_campuses: set[str]) -> bool:
     """Valide le périmètre campus d'un rôle campus_manager.
 
     Les autres rôles passent toujours (True). Pour campus_manager, il faut au
